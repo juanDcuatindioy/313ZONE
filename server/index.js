@@ -171,7 +171,6 @@ app.delete('/api/sales', async (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(` Backend corriendo en el puerto ${PORT}`);
+import app from '../index.js';
+export default app;
 
-});

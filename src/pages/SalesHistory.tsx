@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import {BarChart3, Calendar, Loader, Filter, RefreshCw,CreditCard, DollarSign, Smartphone} from 'lucide-react';
+import { BarChart3, Calendar, Loader, Filter, RefreshCw, CreditCard, DollarSign, Smartphone } from 'lucide-react';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import { useSales } from '../contexts/SalesContext';
 import { PaymentMethod } from '../types';
 import * as XLSX from 'xlsx';
+import { AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FileSpreadsheet } from 'lucide-react';
+
 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
@@ -15,6 +19,8 @@ const SalesHistory: React.FC = () => {
   const [paymentFilter, setPaymentFilter] = useState<PaymentMethod | 'ALL'>('ALL');
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportOption, setReportOption] = useState<'EXCEL' | 'RESUMEN' | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
 
   useEffect(() => {
     fetchSalesHistory();
@@ -77,14 +83,16 @@ const SalesHistory: React.FC = () => {
       case 'today':
         groupingFunction = (date: Date) => `${date.getHours()}:00`;
         break;
-      case 'week':
-        groupingFunction = (date: Date) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+      case 'semana':
+        groupingFunction = (date: Date) => ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'][date.getDay()];
         break;
-      case 'month':
+      case 'mes':
         groupingFunction = (date: Date) => `${date.getDate()}`;
         break;
       default:
-        groupingFunction = (date: Date) => `${date.getMonth() + 1}/${date.getFullYear()}`;
+        groupingFunction = (date: Date) =>
+          `${date.toLocaleString('es-CO', { month: 'long' })} ${date.getFullYear()}`;
+
     }
 
     const salesByDate = filteredSales.reduce((acc, sale) => {
@@ -98,8 +106,8 @@ const SalesHistory: React.FC = () => {
 
     const chartDataArray = Object.entries(salesByDate).map(([date, data]) => ({ date, ...data }));
 
-    if (dateRange === 'week') {
-      const dayOrder = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+    if (dateRange === 'Semana') {
+      const dayOrder = { 'Dom': 0, 'Lun': 1, 'Mar': 2, 'Mie': 3, 'Jue': 4, 'vie': 5, 'sabado': 6 };
       chartDataArray.sort((a, b) => dayOrder[a.date as keyof typeof dayOrder] - dayOrder[b.date as keyof typeof dayOrder]);
     }
 
@@ -110,24 +118,47 @@ const SalesHistory: React.FC = () => {
           label: 'Ingresos por ventas',
           data: chartDataArray.map(item => item.total),
           backgroundColor: 'rgba(139, 92, 246, 0.7)',
+          yAxisID: 'y',
+          barThickness: 40,
         },
         {
           label: 'Número de ventas',
           data: chartDataArray.map(item => item.count),
-          backgroundColor: 'rgba(244, 63, 94, 0.7)',
+          backgroundColor: 'rgba(252, 165, 165, 0.6)',
+          yAxisID: 'y1',
+          barThickness: 20,
         },
       ],
     };
   };
 
+  const formatExcelDate = (isoString: string) => {
+    const date = new Date(isoString);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const mm = pad(date.getMonth() + 1);
+    const dd = pad(date.getDate());
+    const hh = pad(date.getHours());
+    const min = pad(date.getMinutes());
+    const ss = pad(date.getSeconds());
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+  };
 
   const exportSalesToExcel = (sales: typeof salesHistory) => {
-    const rows: any[] = [];
+    const now = new Date();
+    const fecha = now.toLocaleDateString('es-CO');
+    const hora = now.toLocaleTimeString('es-CO').split(' ')[0];
+    const fileDate = now.toISOString().split('T')[0];
+    const fileTime = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    const nombreArchivo = `313ZONE_Ventas_${fileDate}_${fileTime}.xlsx`;
+
+    // Ventas detalladas
+    const detalleRows: any[] = [];
 
     sales.forEach((sale) => {
       sale.items.forEach((item) => {
-        rows.push({
-          Fecha: new Date(sale.date).toLocaleString(),
+        detalleRows.push({
+          Fecha: formatExcelDate(sale.date),
           'Método de pago': sale.paymentMethod,
           Producto: item.name,
           Cantidad: item.quantity,
@@ -138,63 +169,118 @@ const SalesHistory: React.FC = () => {
       });
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Ventas del Día');
+    const resumen = {
+      'Fecha del reporte': `${fecha} ${hora}`,
+      'Ventas totales': sales.length,
+      'Ingresos totales': sales.reduce((sum, s) => sum + Number(s.total || 0), 0),
+      'Promedio por venta': sales.length > 0
+        ? sales.reduce((sum, s) => sum + Number(s.total || 0), 0) / sales.length
+        : 0,
+      'Pagos en efectivo': sales.filter(s => s.paymentMethod === 'CASH').length,
+      'Pagos con tarjeta': sales.filter(s => s.paymentMethod === 'CARD').length,
+      'Pagos con Nequi': sales.filter(s => s.paymentMethod === 'NEQUI').length,
+    };
 
-    const fecha = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(workbook, `Reporte_Ventas_${fecha}.xlsx`);
+    // Crear hojas
+    const wb = XLSX.utils.book_new();
+
+    const hojaDetalle = XLSX.utils.json_to_sheet(detalleRows);
+    XLSX.utils.book_append_sheet(wb, hojaDetalle, 'Detalle Ventas');
+
+    const hojaResumen = XLSX.utils.json_to_sheet([
+      { Indicador: 'Bar', Valor: '313 ZONE' },
+      ...Object.entries(resumen).map(([key, value]) => ({ Indicador: key, Valor: value })),
+    ]);
+    XLSX.utils.book_append_sheet(wb, hojaResumen, 'Resumen');
+
+    // Exportar archivo
+    XLSX.writeFile(wb, nombreArchivo);
   };
+
 
   const stats = getStats();
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      y: { beginAtZero: true, ticks: { color: '#D1D5DB' }, grid: { color: 'rgba(156,163,175,0.1)' } },
-      x: { ticks: { color: '#D1D5DB' }, grid: { color: 'rgba(156,163,175,0.1)' } }
+      y: {
+        beginAtZero: true,
+        type: 'linear' as const,
+        position: 'left' as const,
+        ticks: {
+          color: '#E5E7EB',
+          callback: (value: number | string) => `$${Number(value).toLocaleString()}`,
+        },
+        title: {
+          display: true,
+          text: 'Ingresos ($)',
+          color: '#D1D5DB',
+        },
+        grid: {
+          color: 'rgba(156,163,175,0.1)',
+        },
+      },
+      y1: {
+        beginAtZero: true,
+        type: 'linear' as const,
+        position: 'right' as const,
+        grid: {
+          drawOnChartArea: false,
+        },
+        ticks: {
+          color: '#FCA5A5',
+        },
+        title: {
+          display: true,
+          text: 'N° de Ventas',
+          color: '#FCA5A5',
+        },
+      },
+      x: {
+        ticks: {
+          color: '#D1D5DB',
+        },
+        grid: {
+          color: 'rgba(156,163,175,0.1)',
+        },
+      },
     },
     plugins: {
-      legend: { position: 'top' as const, labels: { color: '#F9FAFB' } },
-      title: { display: false }
-    }
+      legend: {
+        position: 'top' as const,
+        labels: {
+          color: '#F9FAFB',
+        },
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        callbacks: {
+          label: function (context: any) {
+            if (context.dataset.label === 'Ingresos por ventas') {
+              return `Ingresos: $${context.raw.toLocaleString()}`;
+            } else {
+              return `Ventas: ${context.raw}`;
+            }
+          },
+        },
+      },
+      title: {
+        display: false,
+      },
+    },
   };
+
+
 
   const filteredSales = getFilteredSales();
-
-  const { closeDailySales } = useSales();
-  const handleCerrarCaja = async () => {
-    exportSalesToExcel(getFilteredSales());
-    await closeDailySales();
-    setShowReportModal(false);
-  };
-  
+  const { closeAllSales } = useSales();
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Historial de ventas</h1>
-        <button onClick={refreshData} className="inline-flex items-center bg-gray-700 text-white px-3 py-1 rounded-md">
-          <RefreshCw className="mr-2 h-4 w-4" /> Refrescar
-        </button>
       </div>
-
-      {showReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-gray-900 rounded-lg shadow-lg p-6 w-full max-w-md space-y-4">
-            <h2 className="text-xl font-semibold text-white">¿Cómo desea generar el reporte del día?</h2>
-            <div className="space-y-2">
-              <button
-                onClick={handleCerrarCaja}
-                className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded"
-              >
-                📊 Generar en Excel y Cerrar Caja
-              </button>
-
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -218,12 +304,68 @@ const SalesHistory: React.FC = () => {
           <Bar data={prepareChartData()} options={chartOptions} />
         </div>
       </div>
-
-      {/* Botón Cerrar Caja */}
-      <button onClick={() => setShowReportModal(true)} className="inline-flex items-center bg-violet-700 hover:bg-green-600 text-white px-4 py-2 rounded-md transition-colors duration-200">
-        Generar reporte
+      <button
+        onClick={() => setShowConfirmModal(true)}
+        className="inline-flex items-center bg-red-700 hover:bg-red-800 transition-colors text-white px-4 py-2 rounded-lg shadow-md ml-4"
+      >
+        <AlertTriangle className="mr-2 h-4 w-4 text-yellow-300" />
+        Cierre de Caja Total
       </button>
+      <AnimatePresence>
+        {showConfirmModal && (
+          <motion.div
+            className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="bg-white text-gray-800 rounded-lg shadow-lg p-6 max-w-sm w-full"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            >
+              <div className="flex items-center mb-4">
+                <AlertTriangle className="text-yellow-500 mr-2" />
+                <h2 className="text-xl font-semibold">Confirmar Cierre de Caja</h2>
+              </div>
+              <p className="mb-6">
+                Esta acción eliminará <strong>todas las ventas</strong> registradas. ¿Estás seguro? No se puede deshacer.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    closeAllSales();
+                    setShowConfirmModal(false);
+                  }}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md"
+                >
+                  Confirmar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button
+        onClick={() => exportSalesToExcel(getFilteredSales())}
+        className="inline-flex items-center bg-green-700 hover:bg-green-800 transition-colors text-white px-4 py-2 rounded-lg shadow-md ml-4"
+      >
+        <FileSpreadsheet className="mr-2 h-4 w-4 text-white" />
+        Exportar Excel
+      </button>
+
+
     </div>
+
   );
 };
 

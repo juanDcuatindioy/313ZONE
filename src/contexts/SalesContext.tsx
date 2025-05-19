@@ -8,6 +8,7 @@ interface SalesContextType {
     items: SaleItem[];
     total: number;
     paymentMethod: PaymentMethod | null;
+
   };
   salesHistory: Sale[];
   loading: boolean;
@@ -19,7 +20,8 @@ interface SalesContextType {
   completeSale: () => Promise<boolean>;
   clearSale: () => void;
   fetchSalesHistory: () => Promise<void>;
-  closeDailySales: () => Promise<void>;
+  closeAllSales: () => Promise<void>;
+
 }
 
 const SalesContext = createContext<SalesContextType | undefined>(undefined);
@@ -175,6 +177,7 @@ export const SalesProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+
   const clearSale = () => {
     setCurrentSale({
       items: [],
@@ -209,28 +212,25 @@ export const SalesProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     }
   };
-  const closeDailySales = async (): Promise<void> => {
-  try {
-    setLoading(true);
-    const response = await fetch(`${API_URL}/sales`, {
-      method: 'DELETE',
-    });
 
-    if (!response.ok) {
-      throw new Error('Error al cerrar la caja');
+  const closeAllSales = async (): Promise<void> => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/sales`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        throw new Error('Error al cerrar la caja');
+      }
+      toast.success('¡Cierre de caja total exitoso!');
+      fetchSalesHistory();
+    } catch (err) {
+      console.error('Error al cerrar toda la caja:', err);
+      toast.error('No se pudo cerrar la caja total');
+    } finally {
+      setLoading(false);
     }
-
-    toast.success('Caja cerrada correctamente');
-    fetchSalesHistory(); // Recarga el historial actualizado
-  } catch (err) {
-    console.error('Error al cerrar la caja:', err);
-    toast.error('No se pudo cerrar la caja');
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+  };
 
   const value = {
     currentSale,
@@ -244,9 +244,8 @@ export const SalesProvider = ({ children }: { children: ReactNode }) => {
     completeSale,
     clearSale,
     fetchSalesHistory,
-    closeDailySales,
+    closeAllSales,
   };
-
 
   return (
     <SalesContext.Provider value={value}>

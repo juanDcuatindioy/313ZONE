@@ -152,19 +152,18 @@ app.post('/api/sales', async (req, res) => {
   }
 });
 
-// CERRAR CAJA
 app.delete('/api/sales', async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    await connection.query('DELETE FROM sale_items');
-    const [result] = await connection.query('DELETE FROM sales');
+    // Eliminar TODAS las ventas (los sale_items se borran automáticamente gracias a ON DELETE CASCADE)
+    await connection.query('DELETE FROM sales');
 
     await connection.commit();
     connection.release();
 
-    res.json({ message: 'Caja cerrada y ventas eliminadas', deleted: result.affectedRows });
+    res.json({ message: 'Caja cerrada. TODAS las ventas eliminadas.' });
   } catch (error) {
     console.error('Error al cerrar la caja:', error);
     res.status(500).json({ error: 'No se pudo cerrar la caja' });

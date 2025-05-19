@@ -171,6 +171,5 @@ app.delete('/api/sales', async (req, res) => {
 });
 
 // Start server
-import app from '../index.js';
 export default app;
 
